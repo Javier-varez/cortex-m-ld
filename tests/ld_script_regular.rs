@@ -22,66 +22,63 @@ fn create_regular_ld_script() {
 // for the API, but would provide handy ergonomics to simplify the specification of the memory
 // layout.
 //
-// #[LinkerScript]
-// const LD_SCRIPT: () = {
-//     enum MemoryRegions {
-//         #[region(
+// linker_script! {
+//     MemoryRegions => {
+//         Flash => {
 //             address = 0x00000000,
 //             size = 256.kb(),
-//             access = "RX")]
-//         Flash,
-
-//         #[region(
+//             access = "RX",
+//         },
+//         Ram => {
 //             address = 0x20000000,
 //             size = 128.kb(),
-//             access = "RWX")]
-//         Ram,
-
-//         #[region(
+//             access = "RWX",
+//         },
+//         CcRam => {
 //             address = 0x21000000,
 //             size = 16.kb(),
-//             access = "RWX")]
-//         CcRam,
-//     }
-
-//     enum MemoryLayout {
-//         #[section(
+//             access = "RWX",
+//         },
+//     },
+//
+//     Sections => {
+//         VectorTable {
 //             region = Flash,
 //             offset = 0x00,
-//             size = 128.kb())]
-//         VectorTable,
-
-//         #[section(
+//             size = 128.kb(),
+//         },
+//
+//         Text {
 //             region = Flash,
-//             size = 128.kb())]
-//         Text,
-
-//         #[sction(
+//             size = 128.kb(),
+//         },
+//
+//         Ramfunc {
 //             vma = Ram,
 //             lma = Flash,
-//             size = 32.kb())]
-//         Ramfunc,
-
-//         #[section(
+//             size = 32.kb(),
+//         },
+//
+//         Data {
 //             vma = Ram,
 //             lma = Flash,
-//             size = 32.kb())]
-//         Data,
-
-//         #[section(
+//             size = 32.kb(),
+//         },
+//
+//         CcramData {
 //             vma = Ram,
 //             lma = Flash,
-//             size = 32.kb())]
-//         CcramData,
-
-//         #[section(
+//             size = 32.kb(),
+//         }
+//
+//         Bss {
 //             region = Ram,
-//             size = 32.kb())]
-//         Bss,
-
-//         #[section(
+//             size = 32.kb(),
+//         },
+//
+//         CcramBss {
 //             region = Ram,
-//             size = 32.kb())]
-//         CcramBss,
-//     }
-// };
+//             size = 32.kb(),
+//         },
+//     },
+// }
