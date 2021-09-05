@@ -1,38 +1,142 @@
 use syn::{parse::Parse, parse_macro_input, Token};
 
 #[derive(Debug)]
+enum MemoryRegionAttribute {
+    Address(syn::LitInt),
+    Size(syn::Expr),
+    Access(syn::LitStr),
+}
+
+impl Parse for MemoryRegionAttribute {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        match input.parse::<syn::Ident>() {
+            Ok(ident) if ident == "address" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Address(name))
+            }
+            Ok(ident) if ident == "size" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Size(name))
+            }
+            Ok(ident) if ident == "access" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Access(name))
+            }
+            Ok(ident) => {
+                let message = format!("Unknown memory region attribute with name `{}`", ident);
+                Err(syn::Error::new(ident.span(), message))
+            }
+            Err(err) => {
+                let message = format!("Expected identifier. {}", err);
+                Err(syn::Error::new(err.span(), message))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 struct MemoryRegion {
-    name: String,
+    name: syn::Ident,
+    attributes: syn::punctuated::Punctuated<MemoryRegionAttribute, Token![,]>,
 }
 
 impl Parse for MemoryRegion {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let name: syn::Ident = input.parse()?;
+        let name = input.parse::<syn::Ident>()?;
         let _: Token![=>] = input.parse()?;
-        let _content;
-        let _ = syn::braced!(_content in input);
+        let content;
+        let _ = syn::braced!(content in input);
 
-        Ok(MemoryRegion {
-            name: name.to_string(),
-        })
+        let attributes: syn::punctuated::Punctuated<MemoryRegionAttribute, Token![,]> =
+            content.parse_terminated(MemoryRegionAttribute::parse)?;
+
+        Ok(MemoryRegion { name, attributes })
+    }
+}
+
+#[derive(Debug)]
+enum SectionAttribute {
+    Region(syn::Ident),
+    Offset(syn::LitInt),
+    Size(syn::Expr),
+    Vma(syn::Ident),
+    Lma(syn::Ident),
+}
+
+impl Parse for SectionAttribute {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        match input.parse::<syn::Ident>() {
+            Ok(ident) if ident == "region" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Region(name))
+            }
+            Ok(ident) if ident == "offset" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Offset(name))
+            }
+            Ok(ident) if ident == "size" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Size(name))
+            }
+            Ok(ident) if ident == "vma" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Vma(name))
+            }
+            Ok(ident) if ident == "lma" => {
+                let _: Token![=] = input.parse()?;
+                let name = input.parse()?;
+                Ok(Self::Lma(name))
+            }
+            Ok(ident) => {
+                let message = format!("Unknown section attribute with name `{}`", ident);
+                Err(syn::Error::new(ident.span(), message))
+            }
+            Err(err) => {
+                let message = format!("Expected identifier. {}", err);
+                Err(syn::Error::new(err.span(), message))
+            }
+        }
     }
 }
 
 #[derive(Debug)]
 struct Section {
-    name: String,
+    name: syn::Ident,
+    attributes: syn::punctuated::Punctuated<SectionAttribute, Token![,]>,
 }
 
 impl Parse for Section {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let name: syn::Ident = input.parse()?;
-        let _: Token![=>] = input.parse()?;
-        let _content;
-        let _ = syn::braced!(_content in input);
+        // Parse and validate the identifier
+        let name = match input.parse::<syn::Ident>()? {
+            ident if ident == "Text" => ident,
+            ident if ident == "Data" => ident,
+            ident if ident == "Bss" => ident,
+            ident if ident == "CcramData" => ident,
+            ident if ident == "CcramBss" => ident,
+            ident if ident == "VectorTable" => ident,
+            ident if ident == "Ramfunc" => ident,
+            ident => {
+                let message = format!("{} is not a valid `Section` identifier", ident);
+                return Err(syn::Error::new(ident.span(), message));
+            }
+        };
 
-        Ok(Section {
-            name: name.to_string(),
-        })
+        let _: Token![=>] = input.parse()?;
+        let content;
+        let _ = syn::braced!(content in input);
+
+        let attributes: syn::punctuated::Punctuated<SectionAttribute, Token![,]> =
+            content.parse_terminated(SectionAttribute::parse)?;
+
+        Ok(Section { name, attributes })
     }
 }
 
