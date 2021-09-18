@@ -12,7 +12,7 @@ fn create_regular_ld_script() {
         .add_rwx_region("ram", Address::new(0x20000000), 256.kilobytes())
         .unwrap();
 
-    layout.text(&ram, &flash, true).unwrap();
+    layout.text(&ram, &flash, None).unwrap();
 }
 
 //////////////////////////////////////////////////////////////////////////////

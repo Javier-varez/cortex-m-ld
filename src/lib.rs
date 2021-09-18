@@ -1,5 +1,8 @@
-#[deny(missing_docs)]
+use std::collections::hash_map::HashMap;
 use std::marker::PhantomData;
+
+#[cfg(feature = "macros")]
+pub use ld_script_macros::define_linker_script;
 
 /// Error type for the ld_script crate.
 #[derive(Debug)]
@@ -94,25 +97,29 @@ impl<T> MemoryRegion for Memory<T> {
 }
 
 struct Section {
-    name: String,
     vma: MemoryId,
     lma: MemoryId,
     size: Option<Size>,
-    copy_to_vma_on_boot: bool,
+}
+
+impl Section {
+    fn new(vma: MemoryId, lma: MemoryId, size: Option<Size>) -> Self {
+        Section { vma, lma, size }
+    }
 }
 
 /// The MemoryLayout struct represents an abstraction over a GNU linker script. It can be used to
 /// generate a link.x script for your embedded device, allowing customization of the placement of
 /// each section and how they are laid out in memory.
 pub struct MemoryLayout {
-    sections: Vec<Section>,
+    sections: HashMap<String, Section>,
     memory_regions: Vec<Box<dyn MemoryRegion>>,
 }
 
 impl<'a> MemoryLayout {
     pub fn new() -> Result<Self, Error> {
         Ok(Self {
-            sections: vec![],
+            sections: HashMap::new(),
             memory_regions: vec![],
         })
     }
@@ -187,19 +194,16 @@ impl<'a> MemoryLayout {
         self.add_region(name, base_address, size)
     }
 
-    pub fn data<T: Execute, U: Read>(
+    pub fn vector_table<T: Read, U: Read>(
         &mut self,
         vma: &Memory<T>,
         lma: &Memory<U>,
-        copy_to_vma_on_boot: bool,
+        size: Option<Size>,
     ) -> Result<(), Error> {
-        self.sections.push(Section {
-            name: "text".to_owned(),
-            lma: lma.get_id().clone(),
-            vma: vma.get_id().clone(),
-            size: None,
-            copy_to_vma_on_boot,
-        });
+        self.sections.insert(
+            "vector_table".to_owned(),
+            Section::new(lma.get_id().clone(), vma.get_id().clone(), size),
+        );
 
         Ok(())
     }
@@ -208,20 +212,103 @@ impl<'a> MemoryLayout {
         &mut self,
         vma: &Memory<T>,
         lma: &Memory<U>,
-        copy_to_vma_on_boot: bool,
+        size: Option<Size>,
     ) -> Result<(), Error> {
-        self.sections.push(Section {
-            name: "text".to_owned(),
-            lma: lma.get_id().clone(),
-            vma: vma.get_id().clone(),
-            size: None,
-            copy_to_vma_on_boot,
-        });
+        self.sections.insert(
+            "text".to_owned(),
+            Section::new(lma.get_id().clone(), vma.get_id().clone(), size),
+        );
 
         Ok(())
     }
 
-    pub fn generate(self) -> Result<(), Error> {
+    pub fn data<T: Execute, U: Read>(
+        &mut self,
+        vma: &Memory<T>,
+        lma: &Memory<U>,
+        size: Option<Size>,
+    ) -> Result<(), Error> {
+        self.sections.insert(
+            "data".to_owned(),
+            Section::new(lma.get_id().clone(), vma.get_id().clone(), size),
+        );
+
+        Ok(())
+    }
+
+    pub fn bss<T: Execute, U: Read>(
+        &mut self,
+        vma: &Memory<T>,
+        size: Option<Size>,
+    ) -> Result<(), Error> {
+        self.sections.insert(
+            "bss".to_owned(),
+            Section::new(vma.get_id().clone(), vma.get_id().clone(), size),
+        );
+
+        Ok(())
+    }
+
+    pub fn stack<T: Execute, U: Read>(
+        &mut self,
+        vma: &Memory<T>,
+        lma: &Memory<U>,
+        size: Option<Size>,
+    ) -> Result<(), Error> {
+        self.sections.insert(
+            "stack".to_owned(),
+            Section::new(lma.get_id().clone(), vma.get_id().clone(), size),
+        );
+
+        Ok(())
+    }
+
+    pub fn uninit<T: Execute, U: Read>(
+        &mut self,
+        vma: &Memory<T>,
+        lma: &Memory<U>,
+        size: Option<Size>,
+    ) -> Result<(), Error> {
+        self.sections.insert(
+            "uninit".to_owned(),
+            Section::new(lma.get_id().clone(), vma.get_id().clone(), size),
+        );
+
+        Ok(())
+    }
+
+    pub fn ramfunc<T: Execute, U: Read>(
+        &mut self,
+        vma: &Memory<T>,
+        lma: &Memory<U>,
+        size: Option<Size>,
+    ) -> Result<(), Error> {
+        self.sections.insert(
+            "ramfunc".to_owned(),
+            Section::new(lma.get_id().clone(), vma.get_id().clone(), size),
+        );
+
+        Ok(())
+    }
+
+    pub fn custom_section<T: Execute, U: Read>(
+        &mut self,
+        name: &str,
+        vma: &Memory<T>,
+        lma: &Memory<U>,
+        size: Option<Size>,
+    ) -> Result<(), Error> {
+        self.sections.insert(
+            name.to_owned(),
+            Section::new(lma.get_id().clone(), vma.get_id().clone(), size),
+        );
+
+        Ok(())
+    }
+
+    pub fn generate(self, _output_dir: &std::path::Path) -> Result<(), Error> {
+        // Generate linker script in the given directory, along with the reset code.
+
         Ok(())
     }
 }
@@ -266,7 +353,8 @@ mod tests {
         let ram = layout
             .add_rwx_region("RAM", Address(0x00001000), Size(1024))
             .unwrap();
-        layout.text(&ram, &flash).unwrap();
-        layout.generate().unwrap();
+        layout.text(&ram, &flash, None).unwrap();
+        let path: std::path::PathBuf = "".into();
+        layout.generate(&path).unwrap();
     }
 }

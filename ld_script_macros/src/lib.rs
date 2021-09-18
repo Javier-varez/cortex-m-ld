@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use syn::{parse::Parse, parse_macro_input, Token};
 
 #[derive(Debug)]
@@ -201,11 +202,15 @@ impl Parse for Parts {
 
 #[derive(Debug)]
 struct LinkerScript {
+    name: syn::Ident,
     parts: syn::punctuated::Punctuated<Parts, Token![,]>,
 }
 
 impl Parse for LinkerScript {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<LinkerScript> {
+        let name: syn::Ident = input.parse()?;
+        let _: syn::Token![,] = input.parse()?;
+
         let parts: syn::punctuated::Punctuated<Parts, Token![,]> =
             input.parse_terminated(Parts::parse)?;
 
@@ -249,15 +254,140 @@ impl Parse for LinkerScript {
             ));
         }
 
-        Ok(LinkerScript { parts })
+        Ok(LinkerScript { name, parts })
+    }
+}
+
+impl TryInto<proc_macro::TokenStream> for LinkerScript {
+    type Error = syn::Error;
+
+    fn try_into(self) -> Result<proc_macro::TokenStream, syn::Error> {
+        let name = &self.name;
+
+        let memory_regions = self
+            .parts
+            .iter()
+            .find_map(|x| match x {
+                Parts::MemoryRegions(regions) => Some(regions),
+                _ => None,
+            })
+            .unwrap();
+
+        let sections = self
+            .parts
+            .iter()
+            .find_map(|x| match x {
+                Parts::Sections(sections) => Some(sections),
+                _ => None,
+            })
+            .unwrap();
+
+        let memory_regions = memory_regions.regions.iter().map(|region| {
+            let name = &region.name;
+            let lowercase_name = region.name.to_string().to_lowercase();
+            let address = region
+                .attributes
+                .iter()
+                .find_map(|attr| match attr {
+                    MemoryRegionAttribute::Address(x) => Some(x),
+                    _ => None,
+                })
+                .unwrap();
+            let size = region
+                .attributes
+                .iter()
+                .find_map(|attr| match attr {
+                    MemoryRegionAttribute::Size(x) => Some(x),
+                    _ => None,
+                })
+                .unwrap();
+            quote::quote! {
+                let #name = layout.add_rwx_region(#lowercase_name, ::ld_script::Address::new(#address), #size)?;
+            }
+        });
+
+        let sections = sections.sections.iter().map(|section| {
+            let name = &section.name;
+            let lowercase_name = section.name.to_string().to_lowercase();
+            let lma = section.attributes.iter().find_map(|attr| match attr {
+                SectionAttribute::Lma(x) => Some(x),
+                _ => None,
+            });
+            let vma = section.attributes.iter().find_map(|attr| match attr {
+                SectionAttribute::Vma(x) => Some(x),
+                _ => None,
+            });
+            let region = section.attributes.iter().find_map(|attr| match attr {
+                SectionAttribute::Region(x) => Some(x),
+                _ => None,
+            });
+            let size = section.attributes.iter().find_map(|attr| match attr {
+                SectionAttribute::Size(x) => Some(x),
+                _ => None,
+            });
+
+            match (vma, lma, region, size) {
+                (Some(vma), Some(lma), None, Some(size)) => {
+                    quote::quote! {
+                        layout.custom_section(#lowercase_name, &#vma, &#lma, Some(#size))?;
+                    }
+                }
+                (None, None, Some(region), Some(size)) => {
+                    quote::quote! {
+                        layout.custom_section(#lowercase_name, &#region, &#region, Some(#size))?;
+                    }
+                }
+                (Some(vma), Some(lma), None, None) => {
+                    quote::quote! {
+                        layout.custom_section(#lowercase_name, &#vma, &#lma, None)?;
+                    }
+                }
+                (None, None, Some(region), None) => {
+                    quote::quote! {
+                        layout.custom_section(#lowercase_name, &#region, &#region, None)?;
+                    }
+                }
+                _ => syn::Error::new(
+                    name.span(),
+                    "Section should have either (Vma, Lma) or Region",
+                )
+                .to_compile_error(),
+            }
+        });
+
+        let code = quote::quote! {
+            struct #name {
+                output_dir: ::std::path::PathBuf
+            }
+            impl #name {
+                fn new(output_dir: &::std::path::Path) -> Self {
+                    Self {
+                        output_dir: output_dir.to_owned()
+                    }
+                }
+
+                fn generate(&self) -> Result<(), ::ld_script::Error> {
+                    let mut layout = ::ld_script::MemoryLayout::new().unwrap();
+                    #(#memory_regions)*
+                    #(#sections)*
+                    layout.generate(&self.output_dir)
+                }
+
+                fn generate_reset(&self) -> Result<(), ::ld_script::Error> {
+                    Ok(())
+                }
+            }
+        };
+
+        Ok(code.into())
     }
 }
 
 #[proc_macro]
-pub fn linker_script(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ast = parse_macro_input!(item as LinkerScript);
-
-    eprintln!("{:#?}", ast);
-
-    proc_macro::TokenStream::new()
+pub fn define_linker_script(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let linker_script = parse_macro_input!(item as LinkerScript);
+    match linker_script.try_into() {
+        Ok(stream) => stream,
+        Err(error) => error.to_compile_error().into(),
+    }
 }
